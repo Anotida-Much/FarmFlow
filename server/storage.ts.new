@@ -388,15 +388,16 @@ export class MemStorage implements IStorage {
   async createEquipmentItem(insertItem: InsertEquipment): Promise<Equipment> {
     const id = this.equipmentIdCounter++;
     
-    // Convert date strings to Date objects
-    const lastUsed = insertItem.lastUsed ? new Date(insertItem.lastUsed) : undefined;
-    const nextService = insertItem.nextService ? new Date(insertItem.nextService) : undefined;
+    // Convert date strings to Date objects if they exist
+    const lastUsed = insertItem.lastUsed ? new Date(insertItem.lastUsed) : null;
+    const nextService = insertItem.nextService ? new Date(insertItem.nextService) : null;
     
+    // Convert the dates back to ISO strings to match the expected type
     const item: Equipment = { 
       ...insertItem, 
       id,
-      lastUsed,
-      nextService
+      lastUsed: lastUsed ? lastUsed.toISOString() : null,
+      nextService: nextService ? nextService.toISOString() : null
     };
     
     this.equipmentItems.set(id, item);
@@ -407,15 +408,16 @@ export class MemStorage implements IStorage {
     const item = await this.getEquipmentItem(id);
     if (!item) return undefined;
     
-    // Convert date strings to Date objects if they exist
+    // Convert date strings to Date objects if they exist in the input data
     const lastUsed = data.lastUsed ? new Date(data.lastUsed) : item.lastUsed;
     const nextService = data.nextService ? new Date(data.nextService) : item.nextService;
     
-    const updatedItem = { 
+    // Convert the dates back to ISO strings to match the expected type
+    const updatedItem: Equipment = { 
       ...item, 
       ...data,
-      lastUsed,
-      nextService
+      lastUsed: typeof lastUsed === 'string' ? lastUsed : (lastUsed ? new Date(lastUsed).toISOString() : null),
+      nextService: typeof nextService === 'string' ? nextService : (nextService ? new Date(nextService).toISOString() : null)
     };
     
     this.equipmentItems.set(id, updatedItem);
@@ -439,7 +441,14 @@ export class MemStorage implements IStorage {
   
   async createContact(insertContact: InsertContact): Promise<Contact> {
     const id = this.contactIdCounter++;
-    const contact: Contact = { ...insertContact, id };
+    const contact: Contact = { 
+      ...insertContact, 
+      id,
+      email: insertContact.email || null,
+      phone: insertContact.phone || null,
+      address: insertContact.address || null,
+      notes: insertContact.notes || null
+    };
     this.contactItems.set(id, contact);
     return contact;
   }
@@ -476,7 +485,12 @@ export class MemStorage implements IStorage {
     } else {
       // Create new preference
       const id = this.weatherPrefIdCounter++;
-      const pref: WeatherPreference = { ...insertPref, id };
+      const pref: WeatherPreference = { 
+        ...insertPref, 
+        id,
+        location: insertPref.location || "Harare",
+        units: insertPref.units || "metric"
+      };
       this.weatherPrefs.set(id, pref);
       return pref;
     }
@@ -543,10 +557,14 @@ export class DatabaseStorage implements IStorage {
   }
   
   async createTask(insertTask: InsertTask): Promise<Task> {
+    // Convert date strings to Date objects
+    const dueDate = insertTask.dueDate instanceof Date 
+      ? insertTask.dueDate
+      : new Date(insertTask.dueDate);
+    
     // Determine status based on due date
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const dueDate = new Date(insertTask.dueDate);
     
     let status = insertTask.status || "upcoming";
     
@@ -583,7 +601,14 @@ export class DatabaseStorage implements IStorage {
         // Recalculate status based on due date
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const dueDate = data.dueDate ? new Date(data.dueDate) : task.dueDate;
+        
+        // Handle dueDate from data or from existing task
+        let dueDate;
+        if (data.dueDate) {
+          dueDate = data.dueDate instanceof Date ? data.dueDate : new Date(data.dueDate);
+        } else {
+          dueDate = task.dueDate instanceof Date ? task.dueDate : new Date(task.dueDate);
+        }
         
         if (dueDate < today) {
           updatedStatus = "overdue";
@@ -637,8 +662,7 @@ export class DatabaseStorage implements IStorage {
       .insert(inventory)
       .values({
         ...insertItem,
-        status,
-        lastUpdated: new Date()
+        status
       })
       .returning();
     return item;
@@ -661,8 +685,7 @@ export class DatabaseStorage implements IStorage {
       .update(inventory)
       .set({
         ...data,
-        status: updatedStatus,
-        lastUpdated: new Date()
+        status: updatedStatus
       })
       .where(eq(inventory.id, id))
       .returning();
